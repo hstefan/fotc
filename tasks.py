@@ -24,7 +24,8 @@ def docker_build(ctx, repository=DEFAULT_REPOSITORY):
     commit = commit.stdout.strip()
     date = datetime.datetime.utcnow().strftime("%Y%m%d%H%M")
     tag = f"{repository}:{date}-{commit}"
-    ctx.run(f"docker build . -f {DOCKERFILE} -t {tag}")
+    latest = f"{repository}:latest"
+    ctx.run(f"docker build . -f {DOCKERFILE} -t {tag} -t {latest}")
 
 
 def _docker_login_command():

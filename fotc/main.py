@@ -5,6 +5,7 @@ import io
 import logging
 import re
 import os
+import signal
 from typing import Tuple, Text, List, Optional
 
 import requests
@@ -12,7 +13,9 @@ import telegram
 from telegram.error import BadRequest
 from telegram.ext import Updater, CommandHandler
 
-log = logging.getLogger(__name__)
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+                    level=logging.INFO)
+log = logging.getLogger("fotc")
 
 
 def greet_handler(_bot: telegram.Bot, update: telegram.Update):
@@ -108,11 +111,29 @@ def _memegen_str(text: Text) -> Text:
     return text.replace(' ', '_')
 
 
+def _send_message_admin(bot: telegram.Bot, text: Text, **kwargs):
+    chat_id = os.environ.get("TELEGRAM_ADMIN_CHATID", None)
+    if not chat_id:
+        log.warning("No admin chatId defined, would send: \"%s\"", text)
+    else:
+        bot.send_message(chat_id, text, **kwargs)
+
+
+def _handle_sigterm(bot: telegram.Bot, sig, frame):
+    if sig in [signal.SIGTERM, signal.SIGINT]:
+        sig_msg = f"Shutting down on signal {sig}"
+        log.info(sig_msg)
+        _send_message_admin(bot, sig_msg)
+    else:
+        log.info("Ignoring received signal %s", sig)
+
+
 def main():
-    logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
     token = os.environ["TELEGRAM_API_KEY"]
     updater = Updater(token)
+    updater.user_sig_handler = lambda sig, frame: _handle_sigterm(updater.bot, sig, frame)
     _register_command_handlers(updater)
+    _send_message_admin(updater.bot, "Starting up now")
     updater.start_polling()
     updater.idle()
 

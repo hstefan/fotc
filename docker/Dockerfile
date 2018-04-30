@@ -1,13 +1,15 @@
-FROM python:3-alpine
+FROM resin/raspberrypi3-python:3
+
+RUN [ "cross-build-start" ]
+
+ENV INITSYSTEM on
 
 WORKDIR /usr/src/app
 
-COPY requirements.txt ./
-
-RUN pip install --no-cache-dir -r requirements.txt
-
 COPY . .
 
-RUN pip install -e .
+RUN pip install --no-cache-dir -r requirements.txt && pip install -e .
 
 ENTRYPOINT ["fotc-bot"]
+
+RUN [ "cross-build-end" ]

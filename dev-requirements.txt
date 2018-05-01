@@ -14,5 +14,5 @@ requests==2.18.4
 six==1.11.0
 urllib3==1.22
 SQLAlchemy==1.2.7
-psycopg2==2.7.4
+psycopg2-binary==2.7.4
 dateparser==0.7.0

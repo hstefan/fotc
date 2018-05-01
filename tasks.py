@@ -5,6 +5,12 @@ import datetime
 import os
 from invoke import task
 
+try:
+    import sqlalchemy
+    import fotc.database
+except ImportError:
+    print("Unable to import internal modules, install task needs to run first")
+
 DEFAULT_REPOSITORY = "hstefanp/fotc"
 DOCKERFILE = "./docker/Dockerfile"
 
@@ -78,3 +84,14 @@ def install(ctx, dev=False, no_deps=False):
         requirements = "dev-requirements.txt" if dev else "requirements.txt"
         ctx.run(f"pip install -r {requirements}")
     ctx.run("pip install -e .")
+
+
+@task()
+def create_db_tables(_ctx):
+    """
+    Create database tables from the defined modules
+
+    :type _ctx: invoke.Context
+    """
+    engine = fotc.database.get_default_engine()
+    fotc.database.Base.metadata.create_all(engine)

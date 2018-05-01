@@ -6,12 +6,17 @@ import logging
 import re
 import os
 import signal
+import dateparser
 from typing import Tuple, Text, List, Optional
 
 import requests
+from sqlalchemy.orm.session import Session as DbSession
 import telegram
 from telegram.error import BadRequest
 from telegram.ext import Updater, CommandHandler
+from fotc.handlers import DbCommandHandler
+from fotc.database import Reminder
+from fotc.poller import RemindersPoller
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
                     level=logging.INFO)
@@ -55,6 +60,7 @@ def meme_handler(_bot: telegram.Bot, update: telegram.Update):
     args = parsed[1]
     if len(args) not in {2, 3}:
         update.message.reply_text("Invalid argument account. Min 2, max 3.")
+        return
 
     meme = _memegen_str(args[0])
     top_text = _memegen_str(args[1] if len(args) > 1 else None)
@@ -68,18 +74,48 @@ def meme_handler(_bot: telegram.Bot, update: telegram.Update):
                                   quote=True)
 
 
+def remind_me_handler(db_session: DbSession, _bot: telegram.Bot, update: telegram.Update):
+    parsed = _parse_command_args(update.message.text)
+    if not parsed:
+        update.message.reply_text("Unable to interpret requested command")
+        return
+
+    args = parsed[1]
+    if len(args) != 1:
+        update.message.reply_text(f"Exactly one argument must be provided, found {len(args)}")
+        return
+
+    message = update.effective_message
+    if not message.reply_to_message:
+        message.reply_text("Standalone reminders are not supported yet, issue the command in a "
+                           "reply to another message")
+        return
+
+    when = dateparser.parse(args[0])
+    reminder = Reminder(target_chat_id=message.chat_id, when=when,
+                        message_reference=message.reply_to_message.message_id)
+    db_session.add(reminder)
+    message.reply_text(f"Reminder created for {when.isoformat()} (UTC)", quote=True)
+
+
 def _register_command_handlers(updater: Updater):
     """
     Registers all exposed Telegram command handlers
     """
-    handlers = {
+    stateless = {
         "greet": greet_handler,
         "me": me_handler,
         "meme": meme_handler,
     }
 
-    for k, v in handlers.items():
+    for k, v in stateless.items():
         updater.dispatcher.add_handler(CommandHandler(k, v))
+
+    persistent = {
+        "remindme": remind_me_handler
+    }
+    for k, v in persistent.items():
+        updater.dispatcher.add_handler(DbCommandHandler(k, v))
 
 
 def _parse_command_args(text: Text) -> Optional[Tuple[Text, List[Text]]]:
@@ -119,10 +155,11 @@ def _send_message_admin(bot: telegram.Bot, text: Text, **kwargs):
         bot.send_message(chat_id, text, **kwargs)
 
 
-def _handle_sigterm(bot: telegram.Bot, sig, frame):
+def _handle_sigterm(bot: telegram.Bot, poller: RemindersPoller, sig, frame):
     if sig in [signal.SIGTERM, signal.SIGINT]:
         sig_msg = f"Shutting down on signal {sig}"
         log.info(sig_msg)
+        poller.stop()
         _send_message_admin(bot, sig_msg)
     else:
         log.info("Ignoring received signal %s", sig)
@@ -131,9 +168,12 @@ def _handle_sigterm(bot: telegram.Bot, sig, frame):
 def main():
     token = os.environ["TELEGRAM_API_KEY"]
     updater = Updater(token)
-    updater.user_sig_handler = lambda sig, frame: _handle_sigterm(updater.bot, sig, frame)
+    bot = updater.bot
+    poller = RemindersPoller(bot, interval=1)
+    updater.user_sig_handler = lambda sig, frame: _handle_sigterm(updater.bot, poller, sig, frame)
     _register_command_handlers(updater)
     _send_message_admin(updater.bot, "Starting up now")
+    poller.start()
     updater.start_polling()
     updater.idle()
 

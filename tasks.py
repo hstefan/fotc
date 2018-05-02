@@ -4,12 +4,7 @@
 import datetime
 import os
 from invoke import task
-
-try:
-    import sqlalchemy
-    import fotc.database
-except ImportError:
-    print("Unable to import internal modules, install task needs to run first")
+import fotc.database
 
 DEFAULT_REPOSITORY = "hstefanp/fotc"
 DOCKERFILE = "./docker/Dockerfile"
@@ -68,22 +63,7 @@ def test(ctx, dir_path="./tests/"):
     :type ctx: invoke.Context
     :type dir_path: str
     """
-    ctx.run(f"pytest {dir_path}")
-
-
-@task()
-def install(ctx, dev=False, no_deps=False):
-    """
-    Installs package with pip, including dependencies if desired
-
-    :type ctx: invoke.Context
-    :type dev: bool
-    :type no_deps: bool
-    """
-    if not no_deps:
-        requirements = "dev-requirements.txt" if dev else "requirements.txt"
-        ctx.run(f"pip install -r {requirements}")
-    ctx.run("pip install -e .")
+    ctx.run(f"python -m pytest {dir_path}")
 
 
 @task()

@@ -1,7 +1,0 @@
-certifi==2018.4.16
-future==0.16.0
-python-telegram-bot==10.0.2
-requests==2.18.4
-SQLAlchemy==1.2.7
-psycopg2-binary==2.7.4
-dateparser==0.7.0

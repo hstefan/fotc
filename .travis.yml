@@ -16,10 +16,10 @@ env:
   - secure: AXt/dNNV1ZuycHzfkjrOuf/TaStKPqptih616LcJiX8RE6gO5aSENah9wG+HIo0FQxPCcdmaQJOoqRn0cCoNUHu8zxmhym24jA2ZWQtC4xmOZ2FVMDFIgH3cZTqBuzqWW9eHjxqA0JS7eDUHNaWDFIEDBCFS8y3PKZILv4KQYJcfzeNB3LoZQWYqWTWrFjtFB7Rc1VAPtnHjamKjIUi+lr3mICMYjLUAr09Rr0LQRrccMTFYKhZPh5DonLAzQyQNJ+tSgTjSORFB0nBHyn1DhVEUbFBqZioIRGu2KrBQG6JuXwKgI5kZFGjcTh0fYyb6RZPNHzkE36c/Xxah2FOmONyT3iZNh4b+ydfZhMw5ELsuxiOZ8Pc86iM9mEk8bUwDhe7q1f/EFj4K7KFp7SZmeRGKAY2V7oWwIpELpZ4pjG0AnCJbtatpI8Jo/BSRIrfLfiMiv6HZwwlJnU0jxEnNyn6urrx6YSJWuu3biw2XSnZ4Jlbw88eV6f7ervSXwn6dxrxwTC0D8mrWog8Yl8YeAfuT7QCBvJAVbItTQqNFKIYo71C06c7VJnhXrIpBq/mKjb1n2QzV8VbIMtIFbpNjp4N4tgP/6JeGEsMkk5/ozHym4qQO2StTEW8A4FMjA/cA9MUFo+RD1Eu2SukC23KhRqC9KJar3AW4Ntge1Ma/FF8=
 
 before_install:
-  - pip install invoke
+  - pip install pipenv
 
 install:
-  - inv install --dev
+  - pipenv install --dev
 
 script:
   - inv test

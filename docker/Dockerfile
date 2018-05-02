@@ -12,8 +12,8 @@ RUN apk update && \
     apk add --virtual build-deps gcc python-dev musl-dev && \
     apk add postgresql-dev
 
-RUN pip install --no-cache-dir -r requirements.txt && pip install -e .
+RUN pip install --no-cache-dir pipenv && pipenv install --system --deploy
 
-ENTRYPOINT ["fotc-bot"]
+ENTRYPOINT ["python", "-m", "fotc.main"]
 
 RUN [ "cross-build-end" ]

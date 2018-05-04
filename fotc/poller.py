@@ -35,18 +35,23 @@ class RemindersPoller(object):
 
     def _poll_loop(self):
         while not self.stop_event.is_set():
-            session: DbSession = Session()
-            reminders = session.query(Reminder)\
-                .filter(Reminder.sent_on.is_(None))\
-                .filter(Reminder.when < datetime.datetime.now())\
-                .all()
+            try:
+                session: DbSession = Session()
+                reminders = session.query(Reminder)\
+                    .filter(Reminder.sent_on.is_(None))\
+                    .filter(Reminder.when < datetime.datetime.now())\
+                    .all()
 
-            for reminder in reminders:
-                self._process_reminder(reminder)
-            else:
-                session.commit()
+                for reminder in reminders:
+                    self._process_reminder(reminder)
+                else:
+                    session.commit()
 
-            time.sleep(self.interval)
+                time.sleep(self.interval)
+            except Exception: # catch-all to prevent any sort of crash
+                log.exception("Exception caught during reminder polling")
+                time.sleep(2.0)
+
 
     def _process_reminder(self, reminder: Reminder):
         self.bot.send_message(chat_id=reminder.target_chat_id,

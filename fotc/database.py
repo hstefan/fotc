@@ -5,7 +5,7 @@ import logging
 from typing import Text
 
 import sqlalchemy as sqla
-from sqlalchemy import Column, Integer, String, TIMESTAMP
+from sqlalchemy import Column, Integer, BigInteger, String, TIMESTAMP
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
@@ -13,6 +13,24 @@ from sqlalchemy.orm import sessionmaker
 log = logging.getLogger("fotc")
 
 Base = declarative_base()
+
+class Reminder(Base):
+    __tablename__ = "reminders"
+
+    id = Column(Integer, primary_key=True)
+    target_chat_id = Column(String, nullable=False)
+    when = Column(TIMESTAMP, nullable=False)
+    message_reference = Column(String, nullable=True)
+    sent_on = Column(TIMESTAMP, nullable=True)
+
+
+class UserConfig(Base):
+    __tablename__ = "user_configs"
+
+    id = Column(Integer, primary_key=True)
+    telegram_user_id = Column(BigInteger, unique=True, nullable=False)
+    timezone = Column(String, nullable=True)
+
 
 def _get_env_default(name: Text, default_val: Text):
     val = os.environ.get(name)
@@ -37,16 +55,6 @@ def get_default_engine() -> sqla.engine.Engine:
     password = _get_env_default("DATABASE_PASS", "devdevdev")
     conn_str = f"postgresql://{user}:{password}@{host}/{name}"
     return sqla.create_engine(conn_str)
-
-
-class Reminder(Base):
-    __tablename__ = "reminders"
-
-    id = Column(Integer, primary_key=True)
-    target_chat_id = Column(String, nullable=False)
-    when = Column(TIMESTAMP, nullable=False)
-    message_reference = Column(String, nullable=True)
-    sent_on = Column(TIMESTAMP, nullable=True)
 
 
 class LazySessionMaker(object):

@@ -3,19 +3,22 @@
 
 import io
 import logging
-import re
 import os
+import re
 import signal
-import dateparser
 from typing import Tuple, Text, List, Optional
 
+import dateparser
+import pytz
+from pytz.exceptions import UnknownTimeZoneError
 import requests
-from sqlalchemy.orm.session import Session as DbSession
 import telegram
+from sqlalchemy.orm.session import Session as DbSession
 from telegram.error import BadRequest
 from telegram.ext import Updater, CommandHandler
+
+from fotc.database import Reminder, UserConfig
 from fotc.handlers import DbCommandHandler
-from fotc.database import Reminder
 from fotc.poller import RemindersPoller
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -102,6 +105,42 @@ def remind_me_handler(db_session: DbSession, _bot: telegram.Bot, update: telegra
     message.reply_text(f"Reminder created for {when.isoformat()} (UTC)", quote=True)
 
 
+def set_timezone_handler(db_session: DbSession, _bot: telegram.Bot, update: telegram.Update):
+    """Associates the specified timezone with the issuer who issued the command"""
+    parsed = _parse_command_args(update.message.text)
+    if not parsed:
+        update.message.reply_text("Unable to interpret requested command", quote=True)
+        return
+
+    _, args = parsed
+    if not args:
+        update.message.reply_text("At least one argument is required for this command", quote=True)
+        return
+
+    tz_string = ' '.join(args)
+    try:
+        _ = pytz.timezone(tz_string)
+    except UnknownTimeZoneError:
+        help_url = "https://en.wikipedia.org/wiki/List_of_tz_database_time_zones#List"
+        update.message.reply_text(f"Unable to parse specified timezone, please check: {help_url}",
+                                  quote=True)
+        return
+
+    user = update.effective_user
+    log.info("Updating timezone setting for %s: %s", user.id, tz_string)
+    user_config = db_session.query(UserConfig)\
+        .filter(UserConfig.telegram_user_id == user.id)\
+        .first()
+
+    if not user_config:
+        user_config = UserConfig(telegram_user_id=user.id, timezone=tz_string)
+        db_session.add(user_config)
+    else:
+        user_config.timezone = tz_string
+
+    update.message.reply_text(f"Timezone updated to {tz_string}", quote=True)
+
+
 def _register_command_handlers(updater: Updater):
     """
     Registers all exposed Telegram command handlers
@@ -116,7 +155,8 @@ def _register_command_handlers(updater: Updater):
         updater.dispatcher.add_handler(CommandHandler(k, v))
 
     persistent = {
-        "remindme": remind_me_handler
+        "remindme": remind_me_handler,
+        "settz": set_timezone_handler
     }
     for k, v in persistent.items():
         updater.dispatcher.add_handler(DbCommandHandler(k, v))

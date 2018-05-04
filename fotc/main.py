@@ -92,6 +92,10 @@ def remind_me_handler(db_session: DbSession, _bot: telegram.Bot, update: telegra
         return
 
     when = dateparser.parse(args[0])
+    if not when:
+        message.reply_text("Failed to parse date format", quote=True)
+        return
+
     reminder = Reminder(target_chat_id=message.chat_id, when=when,
                         message_reference=message.reply_to_message.message_id)
     db_session.add(reminder)

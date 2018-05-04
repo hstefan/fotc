@@ -80,18 +80,19 @@ def meme_handler(_bot: telegram.Bot, update: telegram.Update):
 def remind_me_handler(db_session: DbSession, _bot: telegram.Bot, update: telegram.Update):
     parsed = _parse_command_args(update.message.text)
     if not parsed:
-        update.message.reply_text("Unable to interpret requested command")
+        update.message.reply_text("Unable to interpret requested command", quote=True)
         return
 
     args = parsed[1]
     if len(args) != 1:
-        update.message.reply_text(f"Exactly one argument must be provided, found {len(args)}")
+        update.message.reply_text(f"Exactly one argument must be provided, found {len(args)}",
+                                  quote=True)
         return
 
     message = update.effective_message
     if not message.reply_to_message:
         message.reply_text("Standalone reminders are not supported yet, issue the command in a "
-                           "reply to another message")
+                           "reply to another message", quote=True)
         return
 
     when = dateparser.parse(args[0])

@@ -12,11 +12,8 @@ class DbCommandHandler(CommandHandler):
     The functionality from CommandHandler is preserved, but the callback is wrapped and called with
     an extra Session object as its first argument
     """
-    def __init__(self, command, callback, filters=None, allow_edited=False, pass_args=False,
-                 pass_update_queue=False, pass_job_queue=False, pass_user_data=False,
-                 pass_chat_data=False):
-        super().__init__(command, self._callback_wrapper, filters, allow_edited, pass_args,
-                         pass_update_queue, pass_job_queue, pass_user_data, pass_chat_data)
+    def __init__(self, command, callback, **kwargs):
+        super().__init__(command, self._callback_wrapper, **kwargs)
         self.inner_callback = callback
 
     def _callback_wrapper(self, bot: telegram.Bot, update: telegram.Update, **kwargs):

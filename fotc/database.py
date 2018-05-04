@@ -49,4 +49,19 @@ class Reminder(Base):
     sent_on = Column(TIMESTAMP, nullable=True)
 
 
-Session = sessionmaker(bind=get_default_engine())
+class LazySessionMaker(object):
+    """
+    Wrapper to initialize a sessionmaker only in the first time an object of this type is called.
+    The engine/bind function is also evaluated when creating the sessionmaker object.
+    """
+    def __init__(self, lazy_bind):
+        self.lazy_bind = lazy_bind
+        self.session_maker = None
+
+    def __call__(self, **kwargs):
+        if self.session_maker == None:
+            self.session_maker = sessionmaker(bind=self.lazy_bind())
+        return self.session_maker(**kwargs)
+
+
+Session = LazySessionMaker(lazy_bind=get_default_engine)

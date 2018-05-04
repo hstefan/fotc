@@ -4,9 +4,8 @@
 import io
 import logging
 import os
-import re
 import signal
-from typing import Tuple, Text, List, Optional
+from typing import Text
 
 import dateparser
 import pytz
@@ -20,6 +19,7 @@ from telegram.ext import Updater, CommandHandler
 from fotc.database import Reminder, UserConfig
 from fotc.handlers import DbCommandHandler
 from fotc.poller import RemindersPoller
+from fotc.util import parse_command_args, memegen_str
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
                     level=logging.INFO)
@@ -55,7 +55,7 @@ def meme_handler(_bot: telegram.Bot, update: telegram.Update):
     """
     Downloads a captioned image from memegen and posts it to the source chat
     """
-    parsed = _parse_command_args(update.message.text)
+    parsed = parse_command_args(update.message.text)
     if not parsed:
         update.message.reply_text("Unable to interpret requested command")
         return
@@ -65,9 +65,9 @@ def meme_handler(_bot: telegram.Bot, update: telegram.Update):
         update.message.reply_text("Invalid argument account. Min 2, max 3.")
         return
 
-    meme = _memegen_str(args[0])
-    top_text = _memegen_str(args[1] if len(args) > 1 else None)
-    bottom_text = _memegen_str(args[2] if len(args) > 2 else None)
+    meme = memegen_str(args[0])
+    top_text = memegen_str(args[1] if len(args) > 1 else None)
+    bottom_text = memegen_str(args[2] if len(args) > 2 else None)
     uri = f"https://memegen.link/{meme}/{top_text}/{bottom_text}.jpg"
     image = requests.get(uri)
     if image.ok:
@@ -78,7 +78,7 @@ def meme_handler(_bot: telegram.Bot, update: telegram.Update):
 
 
 def remind_me_handler(db_session: DbSession, _bot: telegram.Bot, update: telegram.Update):
-    parsed = _parse_command_args(update.message.text)
+    parsed = parse_command_args(update.message.text)
     if not parsed:
         update.message.reply_text("Unable to interpret requested command", quote=True)
         return
@@ -108,7 +108,7 @@ def remind_me_handler(db_session: DbSession, _bot: telegram.Bot, update: telegra
 
 def set_timezone_handler(db_session: DbSession, _bot: telegram.Bot, update: telegram.Update):
     """Associates the specified timezone with the issuer who issued the command"""
-    parsed = _parse_command_args(update.message.text)
+    parsed = parse_command_args(update.message.text)
     if not parsed:
         update.message.reply_text("Unable to interpret requested command", quote=True)
         return
@@ -161,35 +161,6 @@ def _register_command_handlers(updater: Updater):
     }
     for k, v in persistent.items():
         updater.dispatcher.add_handler(DbCommandHandler(k, v))
-
-
-def _parse_command_args(text: Text) -> Optional[Tuple[Text, List[Text]]]:
-    """
-    Parses command text, returning id and args.
-
-    `/foo bar baz` => (foo, [bar, baz])
-    `/foo "bar" "baz"` => (foo, [bar, baz])
-    `/foo "a long string" baz` => (foo, [a long string, baz])
-    """
-    cmd_re = re.compile(r'/(\w*)@?\w*\s*(.*)$')
-    arg_re = re.compile(r'([^"]\S*|".+?")\s*')
-
-    if not cmd_re.match(text):
-        return None
-
-    cmd = cmd_re.search(text).groups()
-    cmd_id = cmd[0].strip('"')
-    if len(cmd) == 2:
-        args = arg_re.findall(cmd[1])
-        return cmd_id, [x.strip('"') for x in args]
-    else:
-        return cmd_id, []
-
-
-def _memegen_str(text: Text) -> Text:
-    if not text:
-        return '_'
-    return text.replace(' ', '_')
 
 
 def _send_message_admin(bot: telegram.Bot, text: Text, **kwargs):

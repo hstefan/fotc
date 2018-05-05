@@ -174,8 +174,10 @@ def group_time_handler(db_session: DbSession, _bot: telegram.Bot, update: telegr
         user = _bot.get_chat_member(chat_id, utz.telegram_user_id).user
         user_mention = f"<a href=\"tg://user?id={user.id}\">{user.first_name}</a>"
         timezone = pytz.timezone(utz.timezone)
-        localtime = pytz.utc.localize(datetime.utcnow()).astimezone(timezone).replace(microsecond=0)
-        entries.append(f"{user_mention} (<i>{timezone}</i>): <b>{localtime.isoformat()}</b>")
+        localtime = pytz.utc.localize(datetime.utcnow()).astimezone(timezone)
+        time_s = localtime.strftime("%H:%M:%S")
+        extra_s = localtime.strftime("%Y-%m-%d %Z%z")
+        entries.append(f"{user_mention} <b>{time_s}</b> <i>{extra_s}</i>")
 
     if entries:
         message = "\n".join(entries)

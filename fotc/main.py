@@ -1,6 +1,6 @@
 #!/usr/bin/env python3.6
 # -*- coding: utf-8 -*-
-
+from datetime import datetime
 import io
 import logging
 import os
@@ -14,9 +14,10 @@ import requests
 import telegram
 from sqlalchemy.orm.session import Session as DbSession
 from telegram.error import BadRequest
-from telegram.ext import Updater, CommandHandler
+from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
 
-from fotc.database import Reminder, UserConfig
+from fotc.database import Session as SessionMaker
+from fotc.database import Reminder, UserConfig, GroupUser
 from fotc.handlers import DbCommandHandler
 from fotc.poller import RemindersPoller
 from fotc.util import parse_command_args, memegen_str
@@ -142,10 +143,50 @@ def set_timezone_handler(db_session: DbSession, _bot: telegram.Bot, update: tele
     update.message.reply_text(f"Timezone updated to {tz_string}", quote=True)
 
 
+def group_membership_handler(_bot: telegram.Bot, update: telegram.Update):
+    """Stream of all messages the bot can see"""
+    user_id = update.effective_user.id
+    chat_id = update.effective_chat.id
+
+    session = SessionMaker()
+    recorded = session.query(GroupUser)\
+        .filter(GroupUser.telegram_user_id == user_id)\
+        .filter(GroupUser.telegram_chat_id == chat_id)\
+        .first()
+    if not recorded:
+        session.add(GroupUser(telegram_user_id=user_id,
+                              telegram_chat_id=chat_id))
+        session.commit()
+        log.info("User id %s is now a known member of chat id %s", user_id, chat_id)
+
+
+def group_time_handler(db_session: DbSession, _bot: telegram.Bot, update: telegram.Update):
+    """Returns localtime for all known members of a given chat"""
+    chat_id = update.effective_chat.id
+    user_id_to_timezones =\
+        db_session.query(GroupUser, GroupUser.telegram_user_id, UserConfig.timezone)\
+        .filter(GroupUser.telegram_chat_id == chat_id)\
+        .join(UserConfig, UserConfig.telegram_user_id == GroupUser.telegram_user_id)\
+        .all()
+
+    entries = []
+    for utz in user_id_to_timezones:
+        username = _bot.get_chat_member(chat_id, utz.telegram_user_id).user.username
+        timezone = pytz.timezone(utz.timezone)
+        localtime = pytz.utc.localize(datetime.utcnow()).astimezone(timezone).replace(microsecond=0)
+        entries.append(f"@{username} (_{timezone}_): *{localtime.isoformat()}*")
+
+    if entries:
+        message = "\n".join(entries)
+        update.message.reply_markdown(message, quote=True)
+    else:
+        update.message.reply_text("No timezone or membership info could be found", quote=True)
+
+
 def _register_command_handlers(updater: Updater):
-    """
-    Registers all exposed Telegram command handlers
-    """
+    """Registers all exposed Telegram command handlers"""
+    updater.dispatcher.add_handler(MessageHandler(Filters.text, group_membership_handler))
+
     stateless = {
         "greet": greet_handler,
         "me": me_handler,
@@ -157,7 +198,8 @@ def _register_command_handlers(updater: Updater):
 
     persistent = {
         "remindme": remind_me_handler,
-        "settz": set_timezone_handler
+        "settz": set_timezone_handler,
+        "gtime": group_time_handler,
     }
     for k, v in persistent.items():
         updater.dispatcher.add_handler(DbCommandHandler(k, v))

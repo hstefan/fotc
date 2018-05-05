@@ -32,6 +32,13 @@ class UserConfig(Base):
     timezone = Column(String, nullable=True)
 
 
+class GroupUser(Base):
+    __tablename__ = "group_users"
+    id = Column(Integer, primary_key=True)
+    telegram_user_id = Column(BigInteger, nullable=False)
+    telegram_chat_id = Column(BigInteger, nullable=False)
+
+
 def _get_env_default(name: Text, default_val: Text):
     val = os.environ.get(name)
     if val is None:

@@ -171,14 +171,15 @@ def group_time_handler(db_session: DbSession, _bot: telegram.Bot, update: telegr
 
     entries = []
     for utz in user_id_to_timezones:
-        username = _bot.get_chat_member(chat_id, utz.telegram_user_id).user.username
+        user = _bot.get_chat_member(chat_id, utz.telegram_user_id).user
+        user_mention = f"<a href=\"tg://user?id={user.id}\">{user.first_name}</a>"
         timezone = pytz.timezone(utz.timezone)
         localtime = pytz.utc.localize(datetime.utcnow()).astimezone(timezone).replace(microsecond=0)
-        entries.append(f"@{username} (_{timezone}_): *{localtime.isoformat()}*")
+        entries.append(f"{user_mention} (<i>{timezone}</i>): <b>{localtime.isoformat()}</b>")
 
     if entries:
         message = "\n".join(entries)
-        update.message.reply_markdown(message, quote=True)
+        update.message.reply_html(message, quote=True)
     else:
         update.message.reply_text("No timezone or membership info could be found", quote=True)
 

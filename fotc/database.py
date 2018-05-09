@@ -5,38 +5,48 @@ import logging
 from typing import Text
 
 import sqlalchemy as sqla
-from sqlalchemy import Column, Integer, BigInteger, String, TIMESTAMP
+from sqlalchemy import Column, Integer, BigInteger, String, TIMESTAMP, MetaData, ForeignKey
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
-
+from sqlalchemy.orm import sessionmaker, relationship
 
 log = logging.getLogger("fotc")
 
-Base = declarative_base()
-
-class Reminder(Base):
-    __tablename__ = "reminders"
-
-    id = Column(Integer, primary_key=True)
-    target_chat_id = Column(String, nullable=False)
-    when = Column(TIMESTAMP, nullable=False)
-    message_reference = Column(String, nullable=True)
-    sent_on = Column(TIMESTAMP, nullable=True)
+Base = declarative_base(metadata=MetaData(schema='fotc'))
 
 
-class UserConfig(Base):
-    __tablename__ = "user_configs"
+class ChatUser(Base):
+    __tablename__ = "users"
 
     id = Column(Integer, primary_key=True)
-    telegram_user_id = Column(BigInteger, unique=True, nullable=False)
+    last_active = Column(TIMESTAMP, nullable=True)
     timezone = Column(String, nullable=True)
+
+
+class ChatGroup(Base):
+    __tablename__ = "groups"
+    id = Column(Integer, primary_key=True)
 
 
 class GroupUser(Base):
     __tablename__ = "group_users"
     id = Column(Integer, primary_key=True)
-    telegram_user_id = Column(BigInteger, nullable=False)
-    telegram_chat_id = Column(BigInteger, nullable=False)
+    user_id = Column(BigInteger, ForeignKey(ChatUser.id), nullable=False)
+    group_id = Column(BigInteger, ForeignKey(ChatGroup.id), nullable=False)
+
+    user = relationship(ChatUser)
+    group = relationship(ChatGroup)
+
+
+class Reminder(Base):
+    __tablename__ = "reminders"
+
+    id = Column(Integer, primary_key=True)
+    group_user_id = Column(Integer, ForeignKey(GroupUser.id))
+    message_ref = Column(String, nullable=True)
+    scheduled_for = Column(TIMESTAMP, nullable=False)
+    sent_on = Column(TIMESTAMP, nullable=True)
+
+    group_user = relationship(GroupUser)
 
 
 def _get_env_default(name: Text, default_val: Text):

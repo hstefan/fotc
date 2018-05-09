@@ -67,11 +67,16 @@ def test(ctx, dir_path="./tests/"):
 
 
 @task()
-def create_db_tables(_ctx):
+def create_db_tables(_ctx, drop=False):
     """
     Create database tables from the defined modules
 
     :type _ctx: invoke.Context
     """
-    engine = fotc.database.get_default_engine()
-    fotc.database.Base.metadata.create_all(engine)
+    conn = fotc.database.get_default_engine().connect()
+    if drop:
+        with open('database/drop-all.sql') as drop:
+            conn.execute(drop.read())
+
+    with open('database/schema.sql') as schema:
+        conn.execute(schema.read())

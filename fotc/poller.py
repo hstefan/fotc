@@ -6,8 +6,10 @@ import telegram
 import time
 import datetime
 
-from fotc.database import Session, Reminder
+from fotc.database import Session, Reminder, GroupUser, ChatGroup, ChatUser
 from sqlalchemy.orm.session import Session as DbSession
+
+from fotc.repository import ReminderRepository
 
 log = logging.getLogger("fotc")
 
@@ -37,13 +39,9 @@ class RemindersPoller(object):
         while not self.stop_event.is_set():
             try:
                 session: DbSession = Session()
-                reminders = session.query(Reminder)\
-                    .filter(Reminder.sent_on.is_(None))\
-                    .filter(Reminder.when < datetime.datetime.now())\
-                    .all()
-
-                for reminder in reminders:
-                    self._process_reminder(reminder)
+                reminder_repo = ReminderRepository(session)
+                for reminder in reminder_repo.query_due_reminders():
+                    self._process_reminder(session, reminder)
                 else:
                     session.commit()
 
@@ -53,9 +51,13 @@ class RemindersPoller(object):
                 time.sleep(2.0)
 
 
-    def _process_reminder(self, reminder: Reminder):
-        self.bot.send_message(chat_id=reminder.target_chat_id,
+    def _process_reminder(self, session: DbSession, reminder: Reminder):
+        chat = session.query(GroupUser) \
+            .filter(GroupUser.id == reminder.group_user_id) \
+            .first()
+
+        self.bot.send_message(chat_id=chat.group_id,
                               text="Remember this?",
-                              reply_to_message_id=reminder.message_reference,
+                              reply_to_message_id=reminder.message_ref,
                               quote=True)
-        reminder.sent_on = datetime.datetime.now()
+        reminder.sent_on = datetime.datetime.utcnow()

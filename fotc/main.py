@@ -17,7 +17,8 @@ from telegram.error import BadRequest
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
 
 from fotc.database import Session as SessionMaker
-from fotc.database import Reminder, UserConfig, GroupUser
+from fotc.database import Reminder, ChatUser, GroupUser
+from fotc.repository import ChatUserRepository, ChatGroupRepository, ReminderRepository
 from fotc.handlers import DbCommandHandler
 from fotc.poller import RemindersPoller
 from fotc.util import parse_command_args, memegen_str
@@ -31,6 +32,7 @@ def greet_handler(_bot: telegram.Bot, update: telegram.Update):
     """
     Sends a hello message back to the user
     """
+    _record_presence(SessionMaker(), update)
     update.message.reply_text(f"Hello, {update.message.from_user.first_name}!", quote=True)
 
 
@@ -38,6 +40,7 @@ def me_handler(_bot: telegram.Bot, update: telegram.Update):
     """
     Replaces "/me" with users first name and deletes command message
     """
+    _record_presence(SessionMaker(), update)
     command_split = update.message.text.split(' ')
     if len(command_split) < 2:
         update.message.reply_text("Missing arguments for /me command", quote=True)
@@ -56,6 +59,7 @@ def meme_handler(_bot: telegram.Bot, update: telegram.Update):
     """
     Downloads a captioned image from memegen and posts it to the source chat
     """
+    _record_presence(SessionMaker(), update)
     parsed = parse_command_args(update.message.text)
     if not parsed:
         update.message.reply_text("Unable to interpret requested command")
@@ -79,6 +83,7 @@ def meme_handler(_bot: telegram.Bot, update: telegram.Update):
 
 
 def remind_me_handler(db_session: DbSession, _bot: telegram.Bot, update: telegram.Update):
+    user, _, group_user = _record_presence(db_session, update)
     parsed = parse_command_args(update.message.text)
     if not parsed:
         update.message.reply_text("Unable to interpret requested command", quote=True)
@@ -96,19 +101,25 @@ def remind_me_handler(db_session: DbSession, _bot: telegram.Bot, update: telegra
                            "reply to another message", quote=True)
         return
 
-    when = dateparser.parse(args[0])
+    parse_settings = {'RETURN_AS_TIMEZONE_AWARE': True}
+    if user.timezone:
+        parse_settings['TO_TIMEZONE'] = user.timezone
+
+    when = dateparser.parse(args[0], settings=parse_settings)
     if not when:
         message.reply_text("Failed to parse date format", quote=True)
         return
 
-    reminder = Reminder(target_chat_id=message.chat_id, when=when,
-                        message_reference=message.reply_to_message.message_id)
-    db_session.add(reminder)
-    message.reply_text(f"Reminder created for {when.isoformat()} (UTC)", quote=True)
+    reminder_repo = ReminderRepository(db_session)
+    reminder_repo.create_reminder(group_user, message.reply_to_message.message_id, when)
+    time_s = when.strftime("%H:%M:%S")
+    extra_s = when.strftime("%Y-%m-%d %Z%z")
+    message.reply_text(f"Reminder created for {time_s} {extra_s}", quote=True)
 
 
 def set_timezone_handler(db_session: DbSession, _bot: telegram.Bot, update: telegram.Update):
     """Associates the specified timezone with the issuer who issued the command"""
+    user, _, _ = _record_presence(db_session, update)
     parsed = parse_command_args(update.message.text)
     if not parsed:
         update.message.reply_text("Unable to interpret requested command", quote=True)
@@ -128,50 +139,28 @@ def set_timezone_handler(db_session: DbSession, _bot: telegram.Bot, update: tele
                                   quote=True)
         return
 
-    user = update.effective_user
-    log.info("Updating timezone setting for %s: %s", user.id, tz_string)
-    user_config = db_session.query(UserConfig)\
-        .filter(UserConfig.telegram_user_id == user.id)\
-        .first()
-
-    if not user_config:
-        user_config = UserConfig(telegram_user_id=user.id, timezone=tz_string)
-        db_session.add(user_config)
-    else:
-        user_config.timezone = tz_string
-
+    user_id = update.effective_user.id
+    log.info("Updating timezone setting for %s: %s", user_id, tz_string)
+    user.timezone =  tz_string
     update.message.reply_text(f"Timezone updated to {tz_string}", quote=True)
 
 
 def group_membership_handler(_bot: telegram.Bot, update: telegram.Update):
     """Stream of all messages the bot can see"""
-    user_id = update.effective_user.id
-    chat_id = update.effective_chat.id
-
-    session = SessionMaker()
-    recorded = session.query(GroupUser)\
-        .filter(GroupUser.telegram_user_id == user_id)\
-        .filter(GroupUser.telegram_chat_id == chat_id)\
-        .first()
-    if not recorded:
-        session.add(GroupUser(telegram_user_id=user_id,
-                              telegram_chat_id=chat_id))
-        session.commit()
-        log.info("User id %s is now a known member of chat id %s", user_id, chat_id)
+    _record_presence(SessionMaker(), update)
 
 
 def group_time_handler(db_session: DbSession, _bot: telegram.Bot, update: telegram.Update):
     """Returns localtime for all known members of a given chat"""
-    chat_id = update.effective_chat.id
-    user_id_to_timezones =\
-        db_session.query(GroupUser, GroupUser.telegram_user_id, UserConfig.timezone)\
-        .filter(GroupUser.telegram_chat_id == chat_id)\
-        .join(UserConfig, UserConfig.telegram_user_id == GroupUser.telegram_user_id)\
-        .all()
+    _, group, _ = _record_presence(db_session, update)
 
+    chat_id = update.effective_chat.id
+    group_repo = ChatGroupRepository(db_session)
+    members = group_repo.list_group_members(group)
+    members_with_tz = filter(lambda u: u.timezone is not None, members)
     entries = []
-    for utz in user_id_to_timezones:
-        user = _bot.get_chat_member(chat_id, utz.telegram_user_id).user
+    for utz in members_with_tz:
+        user = _bot.get_chat_member(chat_id, utz.id).user
         user_mention = f"<a href=\"tg://user?id={user.id}\">{user.first_name}</a>"
         timezone = pytz.timezone(utz.timezone)
         localtime = pytz.utc.localize(datetime.utcnow()).astimezone(timezone)
@@ -184,6 +173,14 @@ def group_time_handler(db_session: DbSession, _bot: telegram.Bot, update: telegr
         update.message.reply_html(message, quote=True)
     else:
         update.message.reply_text("No timezone or membership info could be found", quote=True)
+
+def _record_presence(session: DbSession, update: telegram.Update):
+    user_repo = ChatUserRepository(session)
+    group_repo = ChatGroupRepository(session)
+    user = user_repo.find_or_create_by_id(update.effective_user.id)
+    group = group_repo.find_or_create_by_id(update.effective_chat.id)
+    group_user = group_repo.record_membership(group, user)
+    return user, group, group_user
 
 
 def _register_command_handlers(updater: Updater):

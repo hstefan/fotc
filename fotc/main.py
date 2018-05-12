@@ -103,7 +103,7 @@ def remind_me_handler(db_session: DbSession, _bot: telegram.Bot, update: telegra
 
     parse_settings = {'RETURN_AS_TIMEZONE_AWARE': True}
     if user.timezone:
-        parse_settings['TO_TIMEZONE'] = user.timezone
+        parse_settings['TIMEZONE'] = user.timezone
 
     when = dateparser.parse(args[0], settings=parse_settings)
     if not when:

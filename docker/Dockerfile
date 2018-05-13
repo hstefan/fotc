@@ -11,9 +11,9 @@ RUN apk update && \
     apk add --virtual build-deps gcc python-dev musl-dev && \
     apk add postgresql-dev
 
-RUN pip install --no-cache-dir pipenv
+RUN python3 -m venv .venv
+RUN .venv/bin/pip3 install -r requirements.txt
 
-RUN PIPENV_VENV_IN_PROJECT=1 pipenv install --deploy
 RUN [ "cross-build-end" ]
 
 FROM resin/raspberrypi3-alpine-python:3-slim
@@ -23,6 +23,7 @@ WORKDIR /usr/src/app
 RUN apk update && apk add postgresql-dev
 COPY --from=build-base /usr/src/app/build/.venv .venv
 COPY --from=build-base /usr/src/app/build/fotc fotc
+
 ENTRYPOINT [".venv/bin/python3", "-m", "fotc.main"]
 
 RUN [ "cross-build-end" ]

@@ -161,7 +161,7 @@ def group_time_handler(db_session: DbSession, _bot: telegram.Bot, update: telegr
     entries = []
     for utz in members_with_tz:
         user = _bot.get_chat_member(chat_id, utz.id).user
-        user_mention = f"<a href=\"tg://user?id={user.id}\">{user.first_name}</a>"
+        user_mention = f"<pre>{user.first_name}</pre>"
         timezone = pytz.timezone(utz.timezone)
         localtime = pytz.utc.localize(datetime.utcnow()).astimezone(timezone)
         time_s = localtime.strftime("%H:%M:%S")

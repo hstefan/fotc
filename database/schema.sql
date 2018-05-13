@@ -28,6 +28,12 @@ CREATE TABLE IF NOT EXISTS group_users (
 );
 
 ---
+--- Migrate user_id and group_id to BIGINT, mistakes!
+---
+ALTER TABLE group_users ALTER COLUMN user_id TYPE bigint;
+ALTER TABLE group_users ALTER COLUMN group_id TYPE bigint;
+
+---
 --- Stores reminders that are linked to specific messages that will be forwarded to a given
 --- chat when the scheduled time arrives.
 ---

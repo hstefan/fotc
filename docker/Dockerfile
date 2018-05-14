@@ -1,30 +1,14 @@
-FROM resin/raspberrypi3-alpine-python:3-slim as build-base
-RUN [ "cross-build-start" ]
+FROM python:3-alpine
 
-ENV INITSYSTEM on
-
-WORKDIR /usr/src/app/build
+WORKDIR /usr/src/app
 
 COPY . .
 
-RUN apk update && \
-    apk add --virtual build-deps gcc python-dev musl-dev && \
-    apk add postgresql-dev
+RUN apk update                                                  \
+    && apk add --virtual build-deps gcc postgresql-dev musl-dev \
+    && pip install --no-cache-dir -r requirements.txt           \
+    && apk del build-deps
 
-RUN python3 -m venv .venv
-RUN .venv/bin/pip3 install -r requirements.txt
+RUN apk add postgresql-dev
 
-RUN [ "cross-build-end" ]
-
-FROM resin/raspberrypi3-alpine-python:3-slim
-RUN [ "cross-build-start" ]
-WORKDIR /usr/src/app
-
-RUN apk update && apk add postgresql-dev
-COPY --from=build-base /usr/src/app/build/.venv .venv
-COPY --from=build-base /usr/src/app/build/fotc fotc
-
-ENTRYPOINT [".venv/bin/python3", "-m", "fotc.main"]
-
-RUN [ "cross-build-end" ]
-
+ENTRYPOINT ["python3", "-m", "fotc.main"]

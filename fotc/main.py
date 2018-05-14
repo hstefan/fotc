@@ -47,7 +47,7 @@ def me_handler(_bot: telegram.Bot, update: telegram.Update):
         return
 
     arg = ' '.join(command_split[1:]).strip()
-    update.message.reply_markdown(f"**{update.message.from_user.first_name} {arg}**",
+    update.message.reply_markdown(f"*{update.message.from_user.first_name} {arg}*",
                                   quote=False)
     try:
         update.message.delete()
@@ -145,6 +145,38 @@ def set_timezone_handler(db_session: DbSession, _bot: telegram.Bot, update: tele
     update.message.reply_text(f"Timezone updated to {tz_string}", quote=True)
 
 
+def do_text_replace_command(update: telegram.Update, text: str):
+    command_split = update.message.text.split(' ')
+    arg = ' '.join(command_split[1:]).strip()
+
+    user = update.effective_user
+    user_mention = f"<a href=\"tg://user?id={user.id}\">{user.first_name}</a>"
+    message = f"{user_mention}: {arg} {text}" if arg else f"{user_mention}: {text}"
+
+    update.message.reply_html(message, quote=False)
+
+    try:
+        update.message.delete()
+    except BadRequest:
+        log.info("Unable to delete message, likely due to permissions or being in a private chat")
+
+
+def shrug_handler(_bot: telegram.Bot, update: telegram.Update):
+    """
+    Adds a shrug emoji at the end of the message and delete original message
+    """
+    _record_presence(SessionMaker(), update)
+    do_text_replace_command(update, "¯\_(ツ)_/¯")
+
+
+def lenny_handler(_bot: telegram.Bot, update: telegram.Update):
+    """
+    Adds a shrug lenny at the end of the message and delete original message
+    """
+    _record_presence(SessionMaker(), update)
+    do_text_replace_command(update, "( ͡° ͜ʖ ͡°)")
+
+
 def group_membership_handler(_bot: telegram.Bot, update: telegram.Update):
     """Stream of all messages the bot can see"""
     _record_presence(SessionMaker(), update)
@@ -191,6 +223,8 @@ def _register_command_handlers(updater: Updater):
         "greet": greet_handler,
         "me": me_handler,
         "meme": meme_handler,
+        "lenny": lenny_handler,
+        "shrug": shrug_handler
     }
 
     for k, v in stateless.items():

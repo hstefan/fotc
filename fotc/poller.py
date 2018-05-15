@@ -6,10 +6,10 @@ import telegram
 import time
 import datetime
 
-from fotc.database import Session, Reminder, GroupUser, ChatGroup, ChatUser
+from fotc.database import Session, Reminder
 from sqlalchemy.orm.session import Session as DbSession
 
-from fotc.repository import ReminderRepository
+from fotc.repository import ReminderRepository, ChatGroupRepository
 
 log = logging.getLogger("fotc")
 
@@ -40,8 +40,9 @@ class RemindersPoller(object):
             try:
                 session: DbSession = Session()
                 reminder_repo = ReminderRepository(session)
+                group_repo = ChatGroupRepository(session)
                 for reminder in reminder_repo.query_due_reminders():
-                    self._process_reminder(session, reminder)
+                    self._process_reminder(reminder, group_repo)
                 else:
                     session.commit()
 
@@ -51,13 +52,13 @@ class RemindersPoller(object):
                 time.sleep(2.0)
 
 
-    def _process_reminder(self, session: DbSession, reminder: Reminder):
-        chat = session.query(GroupUser) \
-            .filter(GroupUser.id == reminder.group_user_id) \
-            .first()
-
-        self.bot.send_message(chat_id=chat.group_id,
-                              text="Remember this?",
+    def _process_reminder(self,  reminder: Reminder, group_repo: ChatGroupRepository):
+        group_user = group_repo.find_group_user_by_id(reminder.group_user_id)
+        user = self.bot.get_chat_member(group_user.group_id, group_user.user_id).user
+        user_mention = f"<a href=\"tg://user?id={user.id}\">{user.first_name}</a>"
+        self.bot.send_message(chat_id=group_user.group_id,
+                              text=f"Remember this, {user_mention}?",
                               reply_to_message_id=reminder.message_ref,
+                              parse_mode=telegram.ParseMode.HTML,
                               quote=True)
         reminder.sent_on = datetime.datetime.utcnow()

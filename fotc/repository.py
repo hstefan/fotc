@@ -48,6 +48,11 @@ class ChatGroupRepository(object):
             .filter(ChatGroup.id == group.id)
         return members.all()
 
+    def find_group_user_by_id(self, group_user_id: int) -> Optional[GroupUser]:
+        return self.session.query(GroupUser)\
+            .filter(GroupUser.id == group_user_id)\
+            .first()
+
     def _find_membership(self, group: ChatGroup, user: ChatUser) -> Optional[GroupUser]:
         return self.session.query(GroupUser) \
             .filter(GroupUser.group_id == group.id) \

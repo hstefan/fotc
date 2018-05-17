@@ -47,7 +47,7 @@ def me_handler(db_session: DbSession, _bot: telegram.Bot, update: telegram.Updat
         return
 
     arg = ' '.join(command_split[1:]).strip()
-    update.message.reply_markdown(f"*{update.message.from_user.first_name} {arg}*",
+    update.message.reply_markdown(f"_{update.message.from_user.first_name} {arg}_",
                                   quote=False)
     try:
         update.message.delete()

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3.6
 # -*- coding: utf-8 -*-
-from datetime import datetime
+from datetime import datetime, timedelta
 import io
 import logging
 import os
@@ -28,19 +28,19 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 log = logging.getLogger("fotc")
 
 
-def greet_handler(_bot: telegram.Bot, update: telegram.Update):
+def greet_handler(db_session: DbSession, _bot: telegram.Bot, update: telegram.Update):
     """
     Sends a hello message back to the user
     """
-    _record_presence(SessionMaker(), update)
+    _record_presence(db_session, update)
     update.message.reply_text(f"Hello, {update.message.from_user.first_name}!", quote=True)
 
 
-def me_handler(_bot: telegram.Bot, update: telegram.Update):
+def me_handler(db_session: DbSession, _bot: telegram.Bot, update: telegram.Update):
     """
     Replaces "/me" with users first name and deletes command message
     """
-    _record_presence(SessionMaker(), update)
+    _record_presence(db_session, update)
     command_split = update.message.text.split(' ')
     if len(command_split) < 2:
         update.message.reply_text("Missing arguments for /me command", quote=True)
@@ -55,11 +55,11 @@ def me_handler(_bot: telegram.Bot, update: telegram.Update):
         log.info("Unable to delete message, likely due to permissions or being in a private chat")
 
 
-def meme_handler(_bot: telegram.Bot, update: telegram.Update):
+def meme_handler(db_session: DbSession, _bot: telegram.Bot, update: telegram.Update):
     """
     Downloads a captioned image from memegen and posts it to the source chat
     """
-    _record_presence(SessionMaker(), update)
+    _record_presence(db_session, update)
     parsed = parse_command_args(update.message.text)
     if not parsed:
         update.message.reply_text("Unable to interpret requested command")
@@ -162,25 +162,31 @@ def do_text_replace_command(update: telegram.Update, text: str):
         log.info("Unable to delete message, likely due to permissions or being in a private chat")
 
 
-def shrug_handler(_bot: telegram.Bot, update: telegram.Update):
+def shrug_handler(db_session: DbSession, _bot: telegram.Bot, update: telegram.Update):
     """
     Adds a shrug emoji at the end of the message and delete original message
     """
-    _record_presence(SessionMaker(), update)
+    _record_presence(db_session, update)
     do_text_replace_command(update, "¯\_(ツ)_/¯")
 
 
-def lenny_handler(_bot: telegram.Bot, update: telegram.Update):
+def lenny_handler(db_session: DbSession, _bot: telegram.Bot, update: telegram.Update):
     """
     Adds a shrug lenny at the end of the message and delete original message
     """
-    _record_presence(SessionMaker(), update)
+    _record_presence(db_session, update)
     do_text_replace_command(update, "( ͡° ͜ʖ ͡°)")
 
 
 def group_membership_handler(_bot: telegram.Bot, update: telegram.Update):
     """Stream of all messages the bot can see"""
-    _record_presence(SessionMaker(), update)
+    #TODO: refactor this
+    session = SessionMaker()
+    try:
+        _record_presence(session, update)
+        session.commit()
+    except:
+        session.rollback()
 
 
 def group_time_handler(db_session: DbSession, _bot: telegram.Bot, update: telegram.Update):
@@ -207,31 +213,42 @@ def group_time_handler(db_session: DbSession, _bot: telegram.Bot, update: telegr
     else:
         update.message.reply_text("No timezone or membership info could be found", quote=True)
 
+
+def _user_became_active(session: DbSession, user: ChatUser, dt: timedelta):
+    pass
+
+
 def _record_presence(session: DbSession, update: telegram.Update):
     user_repo = ChatUserRepository(session)
     group_repo = ChatGroupRepository(session)
+
     user = user_repo.find_or_create_by_id(update.effective_user.id)
     group = group_repo.find_or_create_by_id(update.effective_chat.id)
     group_user = group_repo.record_membership(group, user)
+
+    now = datetime.utcnow()
+    prev_activity = user.last_active if user.last_active else now
+    user.last_active = now
+    _on_user_activity(session, user, prev_activity)
     return user, group, group_user
+
+
+def _on_user_activity(_session: DbSession, user: ChatUser, last_active: datetime):
+    dt = user.last_active - last_active
+    if dt > timedelta(minutes=10):
+        log.info("%s has become active after %s seconds idle", user.id, dt.total_seconds())
 
 
 def _register_command_handlers(updater: Updater):
     """Registers all exposed Telegram command handlers"""
     updater.dispatcher.add_handler(MessageHandler(Filters.text, group_membership_handler))
 
-    stateless = {
+    persistent = {
         "greet": greet_handler,
         "me": me_handler,
         "meme": meme_handler,
         "lenny": lenny_handler,
-        "shrug": shrug_handler
-    }
-
-    for k, v in stateless.items():
-        updater.dispatcher.add_handler(CommandHandler(k, v))
-
-    persistent = {
+        "shrug": shrug_handler,
         "remindme": remind_me_handler,
         "settz": set_timezone_handler,
         "gtime": group_time_handler,
@@ -248,7 +265,7 @@ def _send_message_admin(bot: telegram.Bot, text: Text, **kwargs):
         bot.send_message(chat_id, text, **kwargs)
 
 
-def _handle_sigterm(bot: telegram.Bot, poller: RemindersPoller, sig, frame):
+def _handle_sigterm(bot: telegram.Bot, poller: RemindersPoller, sig):
     if sig in [signal.SIGTERM, signal.SIGINT]:
         sig_msg = f"Shutting down on signal {sig}"
         log.info(sig_msg)
@@ -263,7 +280,7 @@ def main():
     updater = Updater(token)
     bot = updater.bot
     poller = RemindersPoller(bot, interval=1)
-    updater.user_sig_handler = lambda sig, frame: _handle_sigterm(updater.bot, poller, sig, frame)
+    updater.user_sig_handler = lambda sig, _: _handle_sigterm(updater.bot, poller, sig)
     _register_command_handlers(updater)
     _send_message_admin(updater.bot, "Starting up now")
     poller.start()

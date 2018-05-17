@@ -14,7 +14,7 @@ class ChatUserRepository(object):
     def find_or_create_by_id(self, user_id: int) -> ChatUser:
         user = self.session.query(ChatUser).filter(ChatUser.id == user_id).first()
         if not user:
-            user = ChatUser(id=user_id, last_active=None, timezone=None)
+            user = ChatUser(id=user_id, last_active=datetime.utcnow(), timezone=None)
             self.session.add(user)
         return user
 

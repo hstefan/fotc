@@ -4,7 +4,9 @@ from datetime import datetime, timedelta
 import io
 import logging
 import os
+import random
 import signal
+from sqlalchemy.exc import IntegrityError
 from typing import Text
 
 import dateparser
@@ -18,7 +20,8 @@ from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
 
 from fotc.database import Session as SessionMaker
 from fotc.database import Reminder, ChatUser, GroupUser
-from fotc.repository import ChatUserRepository, ChatGroupRepository, ReminderRepository
+from fotc.repository import ChatUserRepository, ChatGroupRepository, ReminderRepository, \
+    QuoteRepository
 from fotc.handlers import DbCommandHandler
 from fotc.poller import RemindersPoller
 from fotc.util import parse_command_args, memegen_str
@@ -28,19 +31,19 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 log = logging.getLogger("fotc")
 
 
-def greet_handler(db_session: DbSession, _bot: telegram.Bot, update: telegram.Update):
+def greet_handler(db_session: DbSession, bot: telegram.Bot, update: telegram.Update):
     """
     Sends a hello message back to the user
     """
-    _record_presence(db_session, update)
+    _record_presence(db_session, bot, update)
     update.message.reply_text(f"Hello, {update.message.from_user.first_name}!", quote=True)
 
 
-def me_handler(db_session: DbSession, _bot: telegram.Bot, update: telegram.Update):
+def me_handler(db_session: DbSession, bot: telegram.Bot, update: telegram.Update):
     """
     Replaces "/me" with users first name and deletes command message
     """
-    _record_presence(db_session, update)
+    _record_presence(db_session, bot, update)
     command_split = update.message.text.split(' ')
     if len(command_split) < 2:
         update.message.reply_text("Missing arguments for /me command", quote=True)
@@ -55,11 +58,11 @@ def me_handler(db_session: DbSession, _bot: telegram.Bot, update: telegram.Updat
         log.info("Unable to delete message, likely due to permissions or being in a private chat")
 
 
-def meme_handler(db_session: DbSession, _bot: telegram.Bot, update: telegram.Update):
+def meme_handler(db_session: DbSession, bot: telegram.Bot, update: telegram.Update):
     """
     Downloads a captioned image from memegen and posts it to the source chat
     """
-    _record_presence(db_session, update)
+    _record_presence(db_session, bot, update)
     parsed = parse_command_args(update.message.text)
     if not parsed:
         update.message.reply_text("Unable to interpret requested command")
@@ -82,8 +85,8 @@ def meme_handler(db_session: DbSession, _bot: telegram.Bot, update: telegram.Upd
                                   quote=True)
 
 
-def remind_me_handler(db_session: DbSession, _bot: telegram.Bot, update: telegram.Update):
-    user, _, group_user = _record_presence(db_session, update)
+def remind_me_handler(db_session: DbSession, bot: telegram.Bot, update: telegram.Update):
+    user, _, group_user = _record_presence(db_session, bot, update)
     parsed = parse_command_args(update.message.text)
     if not parsed:
         update.message.reply_text("Unable to interpret requested command", quote=True)
@@ -118,9 +121,9 @@ def remind_me_handler(db_session: DbSession, _bot: telegram.Bot, update: telegra
     message.reply_text(f"Reminder created for {time_s} {extra_s}", quote=True)
 
 
-def set_timezone_handler(db_session: DbSession, _bot: telegram.Bot, update: telegram.Update):
+def set_timezone_handler(db_session: DbSession, bot: telegram.Bot, update: telegram.Update):
     """Associates the specified timezone with the issuer who issued the command"""
-    user, _, _ = _record_presence(db_session, update)
+    user, _, _ = _record_presence(db_session, bot, update)
     parsed = parse_command_args(update.message.text)
     if not parsed:
         update.message.reply_text("Unable to interpret requested command", quote=True)
@@ -162,36 +165,36 @@ def do_text_replace_command(update: telegram.Update, text: str):
         log.info("Unable to delete message, likely due to permissions or being in a private chat")
 
 
-def shrug_handler(db_session: DbSession, _bot: telegram.Bot, update: telegram.Update):
+def shrug_handler(db_session: DbSession, bot: telegram.Bot, update: telegram.Update):
     """
     Adds a shrug emoji at the end of the message and delete original message
     """
-    _record_presence(db_session, update)
+    _record_presence(db_session, bot, update)
     do_text_replace_command(update, "¯\_(ツ)_/¯")
 
 
-def lenny_handler(db_session: DbSession, _bot: telegram.Bot, update: telegram.Update):
+def lenny_handler(db_session: DbSession, bot: telegram.Bot, update: telegram.Update):
     """
     Adds a shrug lenny at the end of the message and delete original message
     """
-    _record_presence(db_session, update)
+    _record_presence(db_session, bot, update)
     do_text_replace_command(update, "( ͡° ͜ʖ ͡°)")
 
 
-def group_membership_handler(_bot: telegram.Bot, update: telegram.Update):
+def group_membership_handler(bot: telegram.Bot, update: telegram.Update):
     """Stream of all messages the bot can see"""
     #TODO: refactor this
     session = SessionMaker()
     try:
-        _record_presence(session, update)
+        _record_presence(session, bot, update)
         session.commit()
     except:
         session.rollback()
 
 
-def group_time_handler(db_session: DbSession, _bot: telegram.Bot, update: telegram.Update):
+def group_time_handler(db_session: DbSession, bot: telegram.Bot, update: telegram.Update):
     """Returns localtime for all known members of a given chat"""
-    _, group, _ = _record_presence(db_session, update)
+    _, group, _ = _record_presence(db_session, bot, update)
 
     chat_id = update.effective_chat.id
     group_repo = ChatGroupRepository(db_session)
@@ -199,7 +202,7 @@ def group_time_handler(db_session: DbSession, _bot: telegram.Bot, update: telegr
     members_with_tz = filter(lambda u: u.timezone is not None, members)
     entries = []
     for utz in members_with_tz:
-        user = _bot.get_chat_member(chat_id, utz.id).user
+        user = bot.get_chat_member(chat_id, utz.id).user
         user_mention = f"<pre>{user.first_name}</pre>"
         timezone = pytz.timezone(utz.timezone)
         localtime = pytz.utc.localize(datetime.utcnow()).astimezone(timezone)
@@ -214,11 +217,61 @@ def group_time_handler(db_session: DbSession, _bot: telegram.Bot, update: telegr
         update.message.reply_text("No timezone or membership info could be found", quote=True)
 
 
-def _user_became_active(session: DbSession, user: ChatUser, dt: timedelta):
-    pass
+def add_quote_handler(db_session: DbSession, bot: telegram.Bot, update: telegram.Update):
+    """Adds a message as a user quote"""
+    _, group, _ = _record_presence(db_session, bot, update)
+    if not update.message.reply_to_message:
+        update.message.reply_text("Command must be sent as a reply to a message", quote=True)
+        return
+
+    user_repo = ChatUserRepository(db_session)
+    group_repo = ChatGroupRepository(db_session)
+    quoted_user_id = update.message.reply_to_message.from_user.id
+    quoted_user = user_repo.find_or_create_by_id(quoted_user_id)
+    quoted_group_user = group_repo.record_membership(group, quoted_user)
+
+    quote_repo = QuoteRepository(db_session)
+    message_ref = update.message.reply_to_message.message_id
+    _ = quote_repo.create_quote(quoted_group_user, message_ref)
+    try:
+        db_session.commit()
+        update.message.reply_text(f"Quote created successfully!", quote=True)
+    except IntegrityError:
+        #FIXME: provide better error reporting
+        log.exception("Failed to create quote for user %s, message_ref %s", quoted_user_id,
+                      message_ref)
+        update.message.reply_text(f"Failed to create new quote due to integrity error", quote=True)
 
 
-def _record_presence(session: DbSession, update: telegram.Update):
+def remove_quote_handler(db_session: DbSession, bot: telegram.Bot, update: telegram.Update):
+    """Adds a message as a user quote"""
+    _, group, group_user = _record_presence(db_session, bot, update)
+    if not update.message.reply_to_message:
+        update.message.reply_text("Command must be sent as a reply to a message", quote=True)
+
+    user_repo = ChatUserRepository(db_session)
+    group_repo = ChatGroupRepository(db_session)
+    quote_repo = QuoteRepository(db_session)
+
+    reply = update.message.reply_to_message
+    quoted_user = user_repo.find_or_create_by_id(reply.from_user.id)
+    quoted_group_user = group_repo.record_membership(group, quoted_user)
+
+    quote = quote_repo.find_quote(quoted_group_user, str(reply.message_id))
+
+    if not quote:
+        update.message.reply_text("Message is not a registered quote", quote=True)
+        return
+
+    if group_user.id != quoted_group_user.id:
+        update.message.reply_text("Only the quoted user can remove his own quote", quote=True)
+        return
+
+    db_session.delete(quote)
+    update.message.reply_text("Quote removed from database", quote=True)
+
+
+def _record_presence(session: DbSession, bot: telegram.Bot, update: telegram.Update):
     user_repo = ChatUserRepository(session)
     group_repo = ChatGroupRepository(session)
 
@@ -229,14 +282,27 @@ def _record_presence(session: DbSession, update: telegram.Update):
     now = datetime.utcnow()
     prev_activity = user.last_active if user.last_active else now
     user.last_active = now
-    _on_user_activity(session, user, prev_activity)
+    _on_user_activity(session, bot, update, user, group_user, prev_activity)
     return user, group, group_user
 
 
-def _on_user_activity(_session: DbSession, user: ChatUser, last_active: datetime):
+def _on_user_activity(session: DbSession, bot: telegram.Bot, update: telegram.Update,
+                      user: ChatUser,  group_user: GroupUser, last_active: datetime):
     dt = user.last_active - last_active
-    if dt > timedelta(minutes=10):
+    if dt > timedelta(hours=12):
+        #TODO: make dt configurable
         log.info("%s has become active after %s seconds idle", user.id, dt.total_seconds())
+        quote_repo = QuoteRepository(session)
+        quotes = quote_repo.get_user_quotes(group_user)
+        if not quotes:
+            return
+
+        quote = random.choice(quotes)
+        telegram_user = update.effective_user
+        user_mention = f"<a href=\"tg://user?id={telegram_user.id}\">{telegram_user.first_name}</a>"
+        update.message.reply_html(f"Welcome back, {user_mention}!", quote=True)
+        bot.forward_message(group_user.group_id, group_user.group_id, quote.message_ref)
+        quote.last_sent_on = datetime.utcnow()
 
 
 def _register_command_handlers(updater: Updater):
@@ -252,6 +318,8 @@ def _register_command_handlers(updater: Updater):
         "remindme": remind_me_handler,
         "settz": set_timezone_handler,
         "gtime": group_time_handler,
+        "quote": add_quote_handler,
+        "rmquote": remove_quote_handler,
     }
     for k, v in persistent.items():
         updater.dispatcher.add_handler(DbCommandHandler(k, v))

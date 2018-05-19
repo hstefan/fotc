@@ -49,6 +49,16 @@ class Reminder(Base):
     group_user = relationship(GroupUser)
 
 
+class ChatGroupUserQuote(Base):
+    __tablename__ = "group_user_quotes"
+
+    id = Column(Integer, primary_key=True)
+    group_user_id = Column(Integer, ForeignKey(GroupUser.id))
+    message_ref = Column(String, nullable=True, unique=True)
+    last_sent_on = Column(TIMESTAMP, nullable=True)
+
+    group_user = relationship(GroupUser)
+
 def _get_env_default(name: Text, default_val: Text):
     val = os.environ.get(name)
     if val is None:

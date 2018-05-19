@@ -3,7 +3,7 @@ from datetime import datetime
 
 from typing import List, Optional
 
-from fotc.database import ChatUser, GroupUser, ChatGroup, Reminder
+from fotc.database import ChatUser, GroupUser, ChatGroup, Reminder, ChatGroupUserQuote
 from sqlalchemy.orm.session import Session as DbSession
 
 
@@ -49,8 +49,8 @@ class ChatGroupRepository(object):
         return members.all()
 
     def find_group_user_by_id(self, group_user_id: int) -> Optional[GroupUser]:
-        return self.session.query(GroupUser)\
-            .filter(GroupUser.id == group_user_id)\
+        return self.session.query(GroupUser) \
+            .filter(GroupUser.id == group_user_id) \
             .first()
 
     def _find_membership(self, group: ChatGroup, user: ChatUser) -> Optional[GroupUser]:
@@ -66,7 +66,7 @@ class ReminderRepository(object):
 
     def create_reminder(self, group_user: GroupUser, message_ref: str,
                         scheduled_time: datetime) -> Reminder:
-        reminder = Reminder(group_user_id=group_user.id,
+        reminder = Reminder(group_user=group_user,
                             message_ref=message_ref,
                             scheduled_for=scheduled_time,
                             sent_on=None)
@@ -78,3 +78,26 @@ class ReminderRepository(object):
             .filter(Reminder.sent_on.is_(None)) \
             .filter(Reminder.scheduled_for <= datetime.utcnow()) \
             .all()
+
+
+class QuoteRepository(object):
+    def __init__(self, session: DbSession):
+        self.session = session
+
+    def create_quote(self, group_user: GroupUser, message_ref: str) -> ChatGroupUserQuote:
+        quote = ChatGroupUserQuote(group_user=group_user, message_ref=message_ref,
+                                   last_sent_on=None)
+        self.session.add(quote)
+        return quote
+
+    def get_user_quotes(self, group_user: GroupUser) -> List[ChatGroupUserQuote]:
+        return self.session.query(ChatGroupUserQuote) \
+            .filter(ChatGroupUserQuote.group_user_id == group_user.id) \
+            .order_by(ChatGroupUserQuote.last_sent_on.asc()) \
+            .all()
+
+    def find_quote(self, group_user: GroupUser, message_ref: str) -> Optional[ChatGroupUserQuote]:
+        return self.session.query(ChatGroupUserQuote) \
+            .filter(ChatGroupUserQuote.group_user_id == group_user.id) \
+            .filter(ChatGroupUserQuote.message_ref == message_ref) \
+            .one_or_none()

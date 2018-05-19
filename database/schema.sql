@@ -44,3 +44,15 @@ CREATE TABLE IF NOT EXISTS reminders (
   scheduled_for TIMESTAMP WITH TIME ZONE NOT NULL,
   sent_on TIMESTAMP WITHOUT TIME ZONE
 );
+
+---
+--- Stores references to messages associated as a quote of a user in a group
+---
+CREATE TABLE IF NOT EXISTS group_user_quotes (
+    id SERIAL PRIMARY KEY NOT NULL,
+    group_user_id BIGINT REFERENCES group_users (id) NOT NULL,
+    message_ref TEXT NOT NULL,
+    last_sent_on TIMESTAMP WITHOUT TIME ZONE
+);
+
+ALTER TABLE group_user_quotes ADD UNIQUE (group_user_id, message_ref);
